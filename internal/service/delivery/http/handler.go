@@ -2,6 +2,7 @@ package deliveryhttp
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -19,6 +20,8 @@ func New(uc service.UseCase) service.Handler {
 func (h *handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.Health)
 	mux.HandleFunc("/api/teachers", h.ListTeachers)
+	mux.HandleFunc("/api/auth/register", h.Register)
+	mux.HandleFunc("/api/auth/login", h.Login)
 }
 
 func (h *handler) Health(w http.ResponseWriter, r *http.Request) {
@@ -105,4 +108,68 @@ func writeValidationError(w http.ResponseWriter, details map[string]string) {
 		"error":   "validation failed",
 		"details": details,
 	})
+}
+
+func (h *handler) Register(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req service.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	resp, err := h.uc.Register(r.Context(), req)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *handler) Login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req service.LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	resp, err := h.uc.Login(r.Context(), req)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func handleServiceError(w http.ResponseWriter, err error) {
+	var validationErr service.ValidationError
+
+	switch {
+	case errors.As(err, &validationErr):
+		writeValidationError(w, validationErr.Details)
+
+	case errors.Is(err, service.ErrEmailAlreadyExists):
+		writeError(w, http.StatusConflict, "пользователь с таким email уже существует")
+
+	case errors.Is(err, service.ErrInvalidCredentials):
+		writeError(w, http.StatusUnauthorized, "неверный email или пароль")
+
+	case errors.Is(err, service.ErrAccountBlocked):
+		writeError(w, http.StatusForbidden, "аккаунт заблокирован")
+
+	default:
+		log.Printf("internal service error: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+	}
 }

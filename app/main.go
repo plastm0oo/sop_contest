@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/plastm0oo/sop_contest/internal/config"
+	"github.com/plastm0oo/sop_contest/internal/service"
 	deliveryhttp "github.com/plastm0oo/sop_contest/internal/service/delivery/http"
 	"github.com/plastm0oo/sop_contest/internal/service/repository"
 	"github.com/plastm0oo/sop_contest/internal/service/usecase"
@@ -44,8 +45,16 @@ func main() {
 			log.Fatalf("db ping error: %v", err)
 		}
 	*/
+	authCfg := service.AuthConfig{
+		JWTSecret:            cfg.JWTSecret,
+		AdminEmail:           cfg.AdminEmail,
+		AccessTokenDuration:  cfg.AccessTokenDuration,
+		RefreshTokenDuration: cfg.RefreshTokenDuration,
+		BcryptCost:           cfg.BcryptCost,
+	}
+
 	repo := repository.New(db)
-	uc := usecase.New(repo)
+	uc := usecase.New(repo, authCfg)
 	h := deliveryhttp.New(uc)
 
 	mux := http.NewServeMux()

@@ -2,13 +2,17 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"time"
 
 	//"log"
 
 	"github.com/plastm0oo/sop_contest/internal/service"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type repo struct {
@@ -54,4 +58,60 @@ func (r *repo) ListTeachers(ctx context.Context, params service.TeacherListParam
 	}
 
 	return items, total, nil
+}
+
+func (r *repo) CreateUser(ctx context.Context, email, passwordHash, role string) (service.AuthUser, error) {
+	const query = `
+		INSERT INTO users (email, password_hash, role)
+		VALUES ($1, $2, $3)
+		RETURNING id, email, password_hash, role, is_blocked;
+	`
+
+	var user service.AuthUser
+
+	err := r.db.GetContext(ctx, &user, query, email, passwordHash, role)
+	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
+			return service.AuthUser{}, service.ErrEmailAlreadyExists
+		}
+
+		return service.AuthUser{}, fmt.Errorf("create user: %w", err)
+	}
+
+	return user, nil
+}
+
+func (r *repo) GetUserByEmail(ctx context.Context, email string) (service.AuthUser, error) {
+	const query = `
+		SELECT id, email, password_hash, role, is_blocked
+		FROM users
+		WHERE email = $1;
+	`
+
+	var user service.AuthUser
+
+	err := r.db.GetContext(ctx, &user, query, email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.AuthUser{}, service.ErrNotFound
+		}
+
+		return service.AuthUser{}, fmt.Errorf("get user by email: %w", err)
+	}
+
+	return user, nil
+}
+
+func (r *repo) CreateRefreshToken(ctx context.Context, userID int64, tokenHash string, expiresAt time.Time) error {
+	const query = `
+		INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
+		VALUES ($1, $2, $3);
+	`
+
+	if _, err := r.db.ExecContext(ctx, query, userID, tokenHash, expiresAt); err != nil {
+		return fmt.Errorf("create refresh token: %w", err)
+	}
+
+	return nil
 }
