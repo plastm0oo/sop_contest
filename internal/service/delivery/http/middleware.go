@@ -37,3 +37,15 @@ func (h *handler) authMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+func (h *handler) adminMiddleware(next http.Handler) http.Handler {
+	return h.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		role, ok := service.RoleFromContext(r.Context())
+		if !ok || role != "admin" {
+			writeError(w, http.StatusForbidden, "недостаточно прав")
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}))
+}

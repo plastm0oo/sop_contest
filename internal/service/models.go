@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"time"
 )
 
@@ -95,4 +96,71 @@ type MyFeedbackItem struct {
 
 type MyFeedbacksResponse struct {
 	Items []MyFeedbackItem `json:"items"`
+}
+
+type TeacherDetailsResponse struct {
+	ID                 int64            `json:"id"`
+	FullName           string           `json:"full_name"`
+	Faculty            string           `json:"faculty"`
+	Email              string           `json:"email"`
+	ReviewsCount       int64            `json:"reviews_count"`
+	AvgRating          float64          `json:"avg_rating"`
+	RatingDistribution map[string]int64 `json:"rating_distribution"`
+}
+
+type TeacherDetailsRow struct {
+	ID           int64   `db:"id"`
+	FullName     string  `db:"full_name"`
+	Faculty      string  `db:"faculty"`
+	Email        string  `db:"email"`
+	ReviewsCount int64   `db:"reviews_count"`
+	AvgRating    float64 `db:"avg_rating"`
+}
+
+type RatingDistributionRow struct {
+	Rating int   `db:"rating"`
+	Count  int64 `db:"count"`
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type RefreshTokenRecord struct {
+	ID        int64        `db:"id"`
+	UserID    int64        `db:"user_id"`
+	Email     string       `db:"email"`
+	Role      string       `db:"role"`
+	IsBlocked bool         `db:"is_blocked"`
+	ExpiresAt time.Time    `db:"expires_at"`
+	RevokedAt sql.NullTime `db:"revoked_at"`
+}
+
+type AdminFeedbackListParams struct {
+	UserID    *int64
+	TeacherID *int64
+	Limit     int
+	Offset    int
+}
+
+type AdminFeedbackItem struct {
+	ID          int64     `db:"id" json:"id"`
+	TeacherID   int64     `db:"teacher_id" json:"teacher_id"`
+	TeacherName string    `db:"teacher_name" json:"teacher_name"`
+	UserID      int64     `db:"user_id" json:"user_id"`
+	UserEmail   string    `db:"user_email" json:"user_email"`
+	Rating      int       `db:"rating" json:"rating"`
+	Comment     string    `db:"comment" json:"comment"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+}
+
+type AdminFeedbacksResponse struct {
+	Items  []AdminFeedbackItem `json:"items"`
+	Total  int64               `json:"total"`
+	Limit  int                 `json:"limit"`
+	Offset int                 `json:"offset"`
 }

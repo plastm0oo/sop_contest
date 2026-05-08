@@ -231,3 +231,151 @@ func validateFeedbackInput(req service.FeedbackCreateRequest) map[string]string 
 
 	return details
 }
+
+func (uc *useCase) GetTeacherByID(ctx context.Context, id int64) (service.TeacherDetailsResponse, error) {
+	if id <= 0 {
+		return service.TeacherDetailsResponse{}, service.ErrTeacherNotFound
+	}
+
+	resp, err := uc.repo.GetTeacherByID(ctx, id)
+	if err != nil {
+		return service.TeacherDetailsResponse{}, err
+	}
+
+	return resp, nil
+}
+
+func (uc *useCase) Refresh(ctx context.Context, req service.RefreshRequest) (service.AuthResponse, error) {
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		return service.AuthResponse{}, service.ErrInvalidRefreshToken
+	}
+
+	tokenHash := auth.HashRefreshToken(refreshToken)
+
+	record, err := uc.repo.GetRefreshTokenByHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			return service.AuthResponse{}, service.ErrInvalidRefreshToken
+		}
+
+		return service.AuthResponse{}, err
+	}
+
+	if record.RevokedAt.Valid {
+		return service.AuthResponse{}, service.ErrInvalidRefreshToken
+	}
+
+	if !record.ExpiresAt.After(now()) {
+		return service.AuthResponse{}, service.ErrInvalidRefreshToken
+	}
+
+	if record.IsBlocked {
+		return service.AuthResponse{}, service.ErrAccountBlocked
+	}
+
+	accessToken, err := auth.GenerateAccessToken(
+		record.UserID,
+		record.Email,
+		record.Role,
+		uc.authCfg.JWTSecret,
+		uc.authCfg.AccessTokenDuration,
+	)
+	if err != nil {
+		return service.AuthResponse{}, err
+	}
+
+	newRefreshToken, err := auth.GenerateRefreshToken()
+	if err != nil {
+		return service.AuthResponse{}, err
+	}
+
+	newRefreshTokenHash := auth.HashRefreshToken(newRefreshToken)
+	newRefreshExpiresAt := now().Add(uc.authCfg.RefreshTokenDuration)
+
+	if err := uc.repo.RotateRefreshToken(
+		ctx,
+		record.ID,
+		record.UserID,
+		newRefreshTokenHash,
+		newRefreshExpiresAt,
+	); err != nil {
+		return service.AuthResponse{}, err
+	}
+
+	return service.AuthResponse{
+		User: service.PublicUser{
+			ID:    record.UserID,
+			Email: record.Email,
+			Role:  record.Role,
+		},
+		AccessToken:      accessToken,
+		RefreshToken:     newRefreshToken,
+		AccessExpiresIn:  int64(uc.authCfg.AccessTokenDuration.Seconds()),
+		RefreshExpiresIn: int64(uc.authCfg.RefreshTokenDuration.Seconds()),
+	}, nil
+}
+
+func (uc *useCase) Logout(ctx context.Context, req service.LogoutRequest) error {
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		return service.ErrInvalidRefreshToken
+	}
+
+	tokenHash := auth.HashRefreshToken(refreshToken)
+
+	if err := uc.repo.RevokeRefreshToken(ctx, tokenHash); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (uc *useCase) ListAdminFeedbacks(
+	ctx context.Context,
+	params service.AdminFeedbackListParams,
+) (service.AdminFeedbacksResponse, error) {
+	if params.Limit < 1 || params.Limit > 100 {
+		return service.AdminFeedbacksResponse{}, service.ValidationError{
+			Details: map[string]string{
+				"limit": "must be an integer from 1 to 100",
+			},
+		}
+	}
+
+	if params.Offset < 0 {
+		return service.AdminFeedbacksResponse{}, service.ValidationError{
+			Details: map[string]string{
+				"offset": "must be an integer greater than or equal to 0",
+			},
+		}
+	}
+
+	items, total, err := uc.repo.ListAdminFeedbacks(ctx, params)
+	if err != nil {
+		return service.AdminFeedbacksResponse{}, err
+	}
+
+	if items == nil {
+		items = make([]service.AdminFeedbackItem, 0)
+	}
+
+	return service.AdminFeedbacksResponse{
+		Items:  items,
+		Total:  total,
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	}, nil
+}
+
+func (uc *useCase) BlockUser(ctx context.Context, userID int64) error {
+	if userID <= 0 {
+		return service.ErrUserNotFound
+	}
+
+	if err := uc.repo.BlockUserAndRevokeTokens(ctx, userID); err != nil {
+		return err
+	}
+
+	return nil
+}

@@ -9,6 +9,8 @@ var (
 	ErrAccountBlocked        = errors.New("account blocked")
 	ErrFeedbackAlreadyExists = errors.New("feedback already exists")
 	ErrTeacherNotFound       = errors.New("teacher not found")
+	ErrInvalidRefreshToken   = errors.New("invalid refresh token")
+	ErrUserNotFound          = errors.New("user not found")
 )
 
 type ValidationError struct {
