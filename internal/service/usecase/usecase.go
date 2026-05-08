@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/plastm0oo/sop_contest/internal/auth"
 	"github.com/plastm0oo/sop_contest/internal/service"
@@ -178,4 +179,55 @@ func validatePassword(password string) string {
 
 var now = func() time.Time {
 	return time.Now()
+}
+
+func (uc *useCase) CreateFeedback(
+	ctx context.Context,
+	userID int64,
+	req service.FeedbackCreateRequest,
+) (service.FeedbackResponse, error) {
+	req.Comment = strings.TrimSpace(req.Comment)
+
+	if details := validateFeedbackInput(req); len(details) > 0 {
+		return service.FeedbackResponse{}, service.ValidationError{Details: details}
+	}
+
+	feedback, err := uc.repo.CreateFeedback(ctx, userID, req.TeacherID, req.Rating, req.Comment)
+	if err != nil {
+		return service.FeedbackResponse{}, err
+	}
+
+	return feedback, nil
+}
+
+func (uc *useCase) ListMyFeedbacks(ctx context.Context, userID int64) (service.MyFeedbacksResponse, error) {
+	items, err := uc.repo.ListFeedbacksByUser(ctx, userID)
+	if err != nil {
+		return service.MyFeedbacksResponse{}, err
+	}
+
+	if items == nil {
+		items = make([]service.MyFeedbackItem, 0)
+	}
+
+	return service.MyFeedbacksResponse{Items: items}, nil
+}
+
+func validateFeedbackInput(req service.FeedbackCreateRequest) map[string]string {
+	details := make(map[string]string)
+
+	if req.TeacherID <= 0 {
+		details["teacher_id"] = "must be a positive integer"
+	}
+
+	if req.Rating < 1 || req.Rating > 5 {
+		details["rating"] = "must be between 1 and 5"
+	}
+
+	commentLen := utf8.RuneCountInString(req.Comment)
+	if commentLen < 10 || commentLen > 2000 {
+		details["comment"] = "length must be between 10 and 2000 characters"
+	}
+
+	return details
 }

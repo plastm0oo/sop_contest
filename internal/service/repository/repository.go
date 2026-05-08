@@ -115,3 +115,60 @@ func (r *repo) CreateRefreshToken(ctx context.Context, userID int64, tokenHash s
 
 	return nil
 }
+
+func (r *repo) CreateFeedback(
+	ctx context.Context,
+	userID int64,
+	teacherID int64,
+	rating int,
+	comment string,
+) (service.FeedbackResponse, error) {
+	const query = `
+		INSERT INTO feedbacks (teacher_id, user_id, rating, comment)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, teacher_id, rating, comment, created_at;
+	`
+
+	var feedback service.FeedbackResponse
+
+	err := r.db.GetContext(ctx, &feedback, query, teacherID, userID, rating, comment)
+	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) {
+			switch pqErr.Code {
+			case "23505":
+				return service.FeedbackResponse{}, service.ErrFeedbackAlreadyExists
+			case "23503":
+				return service.FeedbackResponse{}, service.ErrTeacherNotFound
+			}
+		}
+
+		return service.FeedbackResponse{}, fmt.Errorf("create feedback: %w", err)
+	}
+
+	return feedback, nil
+}
+
+func (r *repo) ListFeedbacksByUser(ctx context.Context, userID int64) ([]service.MyFeedbackItem, error) {
+	const query = `
+		SELECT
+			f.id,
+			f.teacher_id,
+			t.full_name AS teacher_name,
+			f.rating,
+			f.comment,
+			f.created_at
+		FROM feedbacks f
+		JOIN teachers t ON t.id = f.teacher_id
+		WHERE f.user_id = $1
+		ORDER BY f.created_at DESC;
+	`
+
+	items := make([]service.MyFeedbackItem, 0)
+
+	if err := r.db.SelectContext(ctx, &items, query, userID); err != nil {
+		return nil, fmt.Errorf("list feedbacks by user: %w", err)
+	}
+
+	return items, nil
+}

@@ -55,7 +55,7 @@ func main() {
 
 	repo := repository.New(db)
 	uc := usecase.New(repo, authCfg)
-	h := deliveryhttp.New(uc)
+	h := deliveryhttp.New(uc, cfg.JWTSecret)
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)

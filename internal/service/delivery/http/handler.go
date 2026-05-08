@@ -11,17 +11,23 @@ import (
 )
 
 type handler struct {
-	uc service.UseCase
+	uc        service.UseCase
+	jwtSecret string
 }
 
-func New(uc service.UseCase) service.Handler {
-	return &handler{uc: uc}
+func New(uc service.UseCase, jwtSecret string) service.Handler {
+	return &handler{
+		uc:        uc,
+		jwtSecret: jwtSecret,
+	}
 }
 func (h *handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", h.Health)
 	mux.HandleFunc("/api/teachers", h.ListTeachers)
 	mux.HandleFunc("/api/auth/register", h.Register)
 	mux.HandleFunc("/api/auth/login", h.Login)
+	mux.Handle("/api/feedbacks", h.authMiddleware(http.HandlerFunc(h.CreateFeedback)))
+	mux.Handle("/api/feedbacks/me", h.authMiddleware(http.HandlerFunc(h.ListMyFeedbacks)))
 }
 
 func (h *handler) Health(w http.ResponseWriter, r *http.Request) {
@@ -168,8 +174,62 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrAccountBlocked):
 		writeError(w, http.StatusForbidden, "аккаунт заблокирован")
 
+	case errors.Is(err, service.ErrFeedbackAlreadyExists):
+		writeError(w, http.StatusConflict, "вы уже оставляли отзыв на этого преподавателя")
+
+	case errors.Is(err, service.ErrTeacherNotFound):
+		writeError(w, http.StatusNotFound, "преподаватель не найден")
+
 	default:
 		log.Printf("internal service error: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func (h *handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	userID, ok := service.UserIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "пользователь не авторизован")
+		return
+	}
+
+	var req service.FeedbackCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	resp, err := h.uc.CreateFeedback(r.Context(), userID, req)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *handler) ListMyFeedbacks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	userID, ok := service.UserIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "пользователь не авторизован")
+		return
+	}
+
+	resp, err := h.uc.ListMyFeedbacks(r.Context(), userID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }

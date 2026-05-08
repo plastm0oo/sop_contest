@@ -69,3 +69,30 @@ type AuthResponse struct {
 	AccessExpiresIn  int64      `json:"access_expires_in"`
 	RefreshExpiresIn int64      `json:"refresh_expires_in"`
 }
+
+type FeedbackCreateRequest struct {
+	TeacherID int64  `json:"teacher_id"`
+	Rating    int    `json:"rating"`
+	Comment   string `json:"comment"`
+}
+
+type FeedbackResponse struct {
+	ID        int64     `db:"id" json:"id"`
+	TeacherID int64     `db:"teacher_id" json:"teacher_id"`
+	Rating    int       `db:"rating" json:"rating"`
+	Comment   string    `db:"comment" json:"comment"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+type MyFeedbackItem struct {
+	ID          int64     `db:"id" json:"id"`
+	TeacherID   int64     `db:"teacher_id" json:"teacher_id"`
+	TeacherName string    `db:"teacher_name" json:"teacher_name"`
+	Rating      int       `db:"rating" json:"rating"`
+	Comment     string    `db:"comment" json:"comment"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+}
+
+type MyFeedbacksResponse struct {
+	Items []MyFeedbackItem `json:"items"`
+}

@@ -56,6 +56,31 @@ func GenerateAccessToken(userID int64, email, role, secret string, duration time
 	return signed, nil
 }
 
+func ParseAccessToken(tokenString, secret string) (*AccessClaims, error) {
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&AccessClaims{},
+		func(token *jwt.Token) (any, error) {
+			if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+				return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
+			}
+
+			return []byte(secret), nil
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parse access token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*AccessClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid access token")
+	}
+
+	return claims, nil
+}
+
 func GenerateRefreshToken() (string, error) {
 	buf := make([]byte, 32)
 
