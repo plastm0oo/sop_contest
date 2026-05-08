@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/plastm0oo/sop_contest/internal/config"
+	"github.com/plastm0oo/sop_contest/internal/middleware"
+	"github.com/plastm0oo/sop_contest/internal/migrator"
 	"github.com/plastm0oo/sop_contest/internal/service"
 	deliveryhttp "github.com/plastm0oo/sop_contest/internal/service/delivery/http"
 	"github.com/plastm0oo/sop_contest/internal/service/repository"
@@ -37,6 +39,13 @@ func main() {
 		log.Fatalf("db connection error: %v", err)
 	}
 	defer db.Close()
+
+	migrationCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := migrator.Run(migrationCtx, db, "migrations"); err != nil {
+		log.Fatalf("migrations error: %v", err)
+	}
 	/*
 		pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pingCancel()
@@ -60,9 +69,18 @@ func main() {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
+	corsMiddleware := middleware.NewCORS(cfg.CORSAllowedOrigin)
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitAttempts, cfg.RateLimitWindow)
+
+	handlerChain := loggingMiddleware(
+		corsMiddleware.Middleware(
+			rateLimiter.Middleware(mux),
+		),
+	)
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           loggingMiddleware(mux),
+		Handler:           handlerChain,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

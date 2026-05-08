@@ -1,1 +1,11 @@
 .env
+!.env.example
+
+postgres_data/
+*.db
+go.work.sum
+/bin/
+
+*.log
+.DS_Store
+.vscode/

@@ -7,13 +7,14 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -o /app ./app
+RUN go build -o /app ./cmd/server
 
-FROM alpine:3.20
+FROM alpine:3.23
 
 WORKDIR /
 
 COPY --from=builder /app /app
+COPY --from=builder /src/migrations /migrations
 
 EXPOSE 8080
 
