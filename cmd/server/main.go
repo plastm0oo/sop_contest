@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/plastm0oo/sop_contest/docs"
 	"github.com/plastm0oo/sop_contest/internal/config"
 	"github.com/plastm0oo/sop_contest/internal/middleware"
 	"github.com/plastm0oo/sop_contest/internal/migrator"
@@ -68,6 +69,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
+	docs.RegisterRoutes(mux)
 
 	corsMiddleware := middleware.NewCORS(cfg.CORSAllowedOrigin)
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitAttempts, cfg.RateLimitWindow)

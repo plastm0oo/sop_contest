@@ -1,0 +1,773 @@
+openapi: 3.0.4
+
+info:
+  title: SOP Contest Backend API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local Docker Compose server
+
+tags:
+  - name: Health
+    description: Проверка состояния сервиса
+  - name: Auth
+    description: Регистрация, логин, refresh и logout
+  - name: Teachers
+    description: Преподаватели и статистика отзывов
+  - name: Feedbacks
+    description: Пользовательские отзывы
+  - name: Admin
+    description: Административные endpoints
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Healthcheck
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      description: |
+        Регистрирует пользователя. Если `ADMIN_EMAIL` задан и совпадает с email,
+        пользователь получает роль `admin`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              email: user@hse.ru
+              password: Secret123
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: пользователь с таким email уже существует
+        "429":
+          description: Too many attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: слишком много попыток
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      description: |
+        Авторизует пользователя и возвращает пару access/refresh токенов.
+        Для неверного email и неверного пароля возвращается одинаковая ошибка.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: user@hse.ru
+              password: Secret123
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: неверный email или пароль
+        "403":
+          description: Account blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: аккаунт заблокирован
+        "429":
+          description: Too many attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh token rotation
+      description: |
+        При успешном refresh старый refresh token отзывается,
+        а клиент получает новую пару access/refresh токенов.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refresh_token: long-random-string
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: недействительный refresh token
+        "403":
+          description: Account blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      description: Отзывает конкретный refresh token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+            example:
+              refresh_token: long-random-string
+      responses:
+        "204":
+          description: Refresh token revoked
+        "401":
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/teachers:
+    get:
+      tags: [Teachers]
+      summary: List teachers
+      description: Публичный список преподавателей со статистикой отзывов.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Поиск по full_name через ILIKE
+        - name: faculty
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Фильтр по факультету, точное совпадение
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Teachers list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeacherListResponse"
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+
+  /api/teachers/{id}:
+    get:
+      tags: [Teachers]
+      summary: Get teacher details
+      description: Карточка преподавателя со статистикой и распределением оценок.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Teacher details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeacherDetailsResponse"
+        "404":
+          description: Teacher not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: преподаватель не найден
+
+  /api/feedbacks:
+    post:
+      tags: [Feedbacks]
+      summary: Create feedback
+      description: Создаёт отзыв авторизованного пользователя на преподавателя.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackCreateRequest"
+            example:
+              teacher_id: 1
+              rating: 5
+              comment: Отличные лекции, всё понятно
+      responses:
+        "201":
+          description: Feedback created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackResponse"
+        "400":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Teacher not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Feedback already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: вы уже оставляли отзыв на этого преподавателя
+
+  /api/feedbacks/me:
+    get:
+      tags: [Feedbacks]
+      summary: List my feedbacks
+      description: Возвращает отзывы текущего авторизованного пользователя.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: My feedbacks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyFeedbacksResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/admin/feedbacks:
+    get:
+      tags: [Admin]
+      summary: Admin list feedbacks
+      description: Возвращает отзывы пользователей (доступно только admin).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: teacher_id
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Admin feedbacks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminFeedbacksResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Not enough permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: недостаточно прав
+
+  /api/admin/users/{id}/block:
+    post:
+      tags: [Admin]
+      summary: Block user
+      description: |
+        Блокирует пользователя и отзывает все его активные refresh-токены.
+        Операция выполняется в одной транзакции.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: User blocked
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Not enough permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: пользователь не найден
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    ValidationErrorResponse:
+      type: object
+      required: [error, details]
+      properties:
+        error:
+          type: string
+          example: validation failed
+        details:
+          type: object
+          additionalProperties:
+            type: string
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@hse.ru
+        password:
+          type: string
+          minLength: 8
+          example: Secret123
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@hse.ru
+        password:
+          type: string
+          example: Secret123
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          example: long-random-string
+
+    LogoutRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          example: long-random-string
+
+    PublicUser:
+      type: object
+      required: [id, email, role]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        email:
+          type: string
+          format: email
+          example: user@hse.ru
+        role:
+          type: string
+          enum: [user, admin]
+          example: user
+
+    AuthResponse:
+      type: object
+      required:
+        - user
+        - access_token
+        - refresh_token
+        - access_expires_in
+        - refresh_expires_in
+      properties:
+        user:
+          $ref: "#/components/schemas/PublicUser"
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refresh_token:
+          type: string
+          example: long-random-string
+        access_expires_in:
+          type: integer
+          example: 900
+        refresh_expires_in:
+          type: integer
+          example: 604800
+
+    TeacherListItem:
+      type: object
+      required: [id, full_name, faculty, reviews_count, avg_rating]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        full_name:
+          type: string
+          example: Иванов Иван Иванович
+        faculty:
+          type: string
+          example: Факультет компьютерных наук
+        reviews_count:
+          type: integer
+          format: int64
+          example: 87
+        avg_rating:
+          type: number
+          format: float
+          example: 4.3
+
+    TeacherListResponse:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeacherListItem"
+        total:
+          type: integer
+          format: int64
+          example: 6924
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
+
+    TeacherDetailsResponse:
+      type: object
+      required:
+        - id
+        - full_name
+        - faculty
+        - email
+        - reviews_count
+        - avg_rating
+        - rating_distribution
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        full_name:
+          type: string
+          example: Иванов Иван Иванович
+        faculty:
+          type: string
+          example: Факультет компьютерных наук
+        email:
+          type: string
+          example: ivanov@hse.ru
+        reviews_count:
+          type: integer
+          format: int64
+          example: 87
+        avg_rating:
+          type: number
+          format: float
+          example: 4.3
+        rating_distribution:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          example:
+            "1": 2
+            "2": 3
+            "3": 10
+            "4": 25
+            "5": 47
+
+    FeedbackCreateRequest:
+      type: object
+      required: [teacher_id, rating, comment]
+      properties:
+        teacher_id:
+          type: integer
+          format: int64
+          example: 1
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+        comment:
+          type: string
+          minLength: 10
+          maxLength: 2000
+          example: Отличные лекции, всё понятно
+
+    FeedbackResponse:
+      type: object
+      required: [id, teacher_id, rating, comment, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 555
+        teacher_id:
+          type: integer
+          format: int64
+          example: 1
+        rating:
+          type: integer
+          example: 5
+        comment:
+          type: string
+          example: Отличные лекции, всё понятно
+        created_at:
+          type: string
+          format: date-time
+          example: 2026-04-16T10:30:00Z
+
+    MyFeedbackItem:
+      type: object
+      required: [id, teacher_id, teacher_name, rating, comment, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 555
+        teacher_id:
+          type: integer
+          format: int64
+          example: 1
+        teacher_name:
+          type: string
+          example: Иванов Иван Иванович
+        rating:
+          type: integer
+          example: 5
+        comment:
+          type: string
+          example: Отличные лекции, всё понятно
+        created_at:
+          type: string
+          format: date-time
+
+    MyFeedbacksResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MyFeedbackItem"
+
+    AdminFeedbackItem:
+      type: object
+      required:
+        - id
+        - teacher_id
+        - teacher_name
+        - user_id
+        - user_email
+        - rating
+        - comment
+        - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        teacher_id:
+          type: integer
+          format: int64
+          example: 1
+        teacher_name:
+          type: string
+          example: Иванов Иван Иванович
+        user_id:
+          type: integer
+          format: int64
+          example: 1
+        user_email:
+          type: string
+          format: email
+          example: user@hse.ru
+        rating:
+          type: integer
+          example: 5
+        comment:
+          type: string
+          example: Отличные лекции, всё понятно
+        created_at:
+          type: string
+          format: date-time
+
+    AdminFeedbacksResponse:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFeedbackItem"
+        total:
+          type: integer
+          format: int64
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        offset:
+          type: integer
+          example: 0
